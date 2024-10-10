@@ -5,12 +5,13 @@ import java.util.*;
 
 public class Main {
 
-    private static final String ALPHABET = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+    private static final char[] ALPHABET_ENG = "abcdefghijklmnopqrstuvwxyz".toCharArray();
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
         int mode = getMode(scanner);
+        boolean needKey = mode != 4 && mode != 3; // Ключ не нужен для статистического анализа и brute force
 
         System.out.println("Введите путь к файлу:");
         String filePath = scanner.nextLine();
@@ -28,8 +29,11 @@ public class Main {
 
         System.out.println("Вы ввели корректный путь к файлу: " + filePath);
 
-        System.out.println("Введите ключ (целое число):");
-        int key = getKey(scanner);
+        int key = 0;
+        if (needKey) {
+            System.out.println("Введите ключ (целое число):");
+            key = getKey(scanner);
+        }
 
         CipherProcessor processor = new CipherProcessor(filePath, key);
 
@@ -137,8 +141,7 @@ class FileValidator {
 class CipherProcessor {
     private String filePath;
     private int key;
-    private int finalkey = key;
-    private static final String ALPHABET = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+    private static final char[] ALPHABET_ENG = "abcdefghijklmnopqrstuvwxyz".toCharArray();
 
     public CipherProcessor(String filePath, int key) {
         this.filePath = filePath;
@@ -154,9 +157,21 @@ class CipherProcessor {
     }
 
     public void bruteForceDecrypt() {
-        for (int key = 1; key < ALPHABET.length(); key++) {
-            processFile(filePath, filePath + ".brute_force_decrypted_" + key, line -> decrypt(line, finalkey));
+        String encryptedText = readFile(filePath);
+        for (int key = 1; key < ALPHABET_ENG.length; key++) {
+            String decryptedText = decrypt(encryptedText, key);
+            if (isTextMeaningful(decryptedText)) {
+                System.out.println("Найден правильный ключ: " + key);
+                System.out.println("Расшифрованный текст:");
+                System.out.println(decryptedText);
+
+                // Запись результата в файл
+                String outputFilePath = filePath + ".brute_force_decrypted";
+                writeFile(outputFilePath, decryptedText);
+                return;
+            }
         }
+        System.out.println("Не удалось найти правильный ключ.");
     }
 
     public void statisticalAnalysisDecrypt() {
@@ -167,9 +182,18 @@ class CipherProcessor {
                 encryptedText.append(line).append("\n");
             }
 
-            StatisticalAnalyzer analyzer = new StatisticalAnalyzer(encryptedText.toString(), ALPHABET);
+            StatisticalAnalyzer analyzer = new StatisticalAnalyzer(encryptedText.toString(), new String(ALPHABET_ENG));
             int bestKey = analyzer.findBestKey();
-            processFile(filePath, filePath + ".statistical_analysis_decrypted", encryptedLine -> decrypt(encryptedLine, bestKey));
+            String decryptedText = decrypt(encryptedText.toString(), bestKey);
+
+            System.out.println("Найден правильный ключ: " + bestKey);
+            System.out.println("Расшифрованный текст:");
+            System.out.println(decryptedText);
+
+            // Запись результата в файл
+            String outputFilePath = filePath + ".statistical_analysis_decrypted";
+
+            writeFile(outputFilePath, decryptedText);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -184,7 +208,8 @@ class CipherProcessor {
                 writer.write(cipherFunction.apply(line));
                 writer.newLine();
             }
-            System.out.println("Успех");
+            System.out.println("Результат записан в файл: " + outputFilePath);
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -199,23 +224,70 @@ class CipherProcessor {
     }
 
     private String decrypt(String text, int key) {
-        return encrypt(text, ALPHABET.length() - key);
+        StringBuilder decryptedText = new StringBuilder();
+
+        for (char c : text.toCharArray()) {
+            int index = new String(ALPHABET_ENG).indexOf(Character.toLowerCase(c));
+            if (index != -1) {
+                int newIndex = (index - key + ALPHABET_ENG.length) % ALPHABET_ENG.length;
+                char newChar = ALPHABET_ENG[newIndex];
+                decryptedText.append(Character.isUpperCase(c) ? Character.toUpperCase(newChar) : newChar);
+            } else {
+                decryptedText.append(c);
+            }
+        }
+
+        return decryptedText.toString();
     }
 
     private String encrypt(String text, int key) {
         StringBuilder encryptedText = new StringBuilder();
 
         for (char c : text.toCharArray()) {
-            int index = ALPHABET.indexOf(c);
+            int index = new String(ALPHABET_ENG).indexOf(Character.toLowerCase(c));
             if (index != -1) {
-                int newIndex = (index + key) % ALPHABET.length();
-                encryptedText.append(ALPHABET.charAt(newIndex));
+                int newIndex = (index + key) % ALPHABET_ENG.length;
+                char newChar = ALPHABET_ENG[newIndex];
+                encryptedText.append(Character.isUpperCase(c) ? Character.toUpperCase(newChar) : newChar);
             } else {
                 encryptedText.append(c);
             }
         }
 
         return encryptedText.toString();
+    }
+
+    private String readFile(String filePath) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            StringBuilder content = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line).append("\n");
+            }
+            return content.toString();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return "";
+        }
+    }
+
+    private void writeFile(String filePath, String content) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath))) {
+            writer.write(content);
+            System.out.println("Результат записан в файл: " + filePath);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean isTextMeaningful(String text) {
+        String[] commonWords = {"the", "and", "is", "in", "it", "of", "to", "that", "was", "for"};
+        for (String word : commonWords) {
+            if (text.toLowerCase().contains(word)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @FunctionalInterface
@@ -225,108 +297,38 @@ class CipherProcessor {
 }
 
 class StatisticalAnalyzer {
-    private String encryptedText;
+    private String text;
     private String alphabet;
 
-    public StatisticalAnalyzer(String encryptedText, String alphabet) {
-        this.encryptedText = encryptedText;
+    public StatisticalAnalyzer(String text, String alphabet) {
+        this.text = text;
         this.alphabet = alphabet;
     }
 
     public int findBestKey() {
-        Map<Character, Double> russianFrequency = getRussianFrequency();
-        double bestScore = Double.MAX_VALUE;
-        int bestKey = 0;
+        Map<Character, Integer> frequencyMap = new HashMap<>();
 
-        for (int key = 0; key < alphabet.length(); key++) {
-            String decryptedText = decrypt(encryptedText, key);
-            Map<Character, Integer> frequency = getFrequency(decryptedText);
-            double score = calculateScore(frequency, russianFrequency);
-
-            if (score < bestScore) {
-                bestScore = score;
-                bestKey = key;
-            }
-        }
-
-        return bestKey;
-    }
-
-    private String decrypt(String text, int key) {
-        StringBuilder decryptedText = new StringBuilder();
-
+        // Подсчет частоты встречаемости букв
         for (char c : text.toCharArray()) {
-            int index = alphabet.indexOf(c);
-            if (index != -1) {
-                int newIndex = (index - key + alphabet.length()) % alphabet.length();
-                decryptedText.append(alphabet.charAt(newIndex));
-            } else {
-                decryptedText.append(c);
+            if (alphabet.indexOf(Character.toLowerCase(c)) != -1) {
+                frequencyMap.put(Character.toLowerCase(c), frequencyMap.getOrDefault(Character.toLowerCase(c), 0) + 1);
             }
         }
 
-        return decryptedText.toString();
-    }
+        // Поиск наиболее часто встречающейся буквы
+        char mostFrequentChar = ' ';
+        int maxFrequency = 0;
 
-    private Map<Character, Double> getRussianFrequency() {
-        Map<Character, Double> frequency = new HashMap<>();
-        frequency.put('о', 0.1097);
-        frequency.put('е', 0.0845);
-        frequency.put('а', 0.0801);
-        frequency.put('и', 0.0735);
-        frequency.put('н', 0.0670);
-        frequency.put('т', 0.0626);
-        frequency.put('с', 0.0547);
-        frequency.put('р', 0.0473);
-        frequency.put('в', 0.0454);
-        frequency.put('л', 0.0440);
-        frequency.put('к', 0.0349);
-        frequency.put('м', 0.0321);
-        frequency.put('д', 0.0298);
-        frequency.put('п', 0.0281);
-        frequency.put('у', 0.0262);
-        frequency.put('я', 0.0201);
-        frequency.put('ы', 0.0190);
-        frequency.put('ь', 0.0174);
-        frequency.put('г', 0.0170);
-        frequency.put('з', 0.0165);
-        frequency.put('б', 0.0159);
-        frequency.put('ч', 0.0144);
-        frequency.put('й', 0.0121);
-        frequency.put('х', 0.0097);
-        frequency.put('ж', 0.0094);
-        frequency.put('ш', 0.0073);
-        frequency.put('ю', 0.0064);
-        frequency.put('ц', 0.0048);
-        frequency.put('щ', 0.0036);
-        frequency.put('э', 0.0032);
-        frequency.put('ф', 0.0026);
-        frequency.put('ъ', 0.0004);
-        frequency.put('ё', 0.0004);
-
-        return frequency;
-    }
-
-    private Map<Character, Integer> getFrequency(String text) {
-        Map<Character, Integer> frequency = new HashMap<>();
-        for (char c : text.toCharArray()) {
-            if (alphabet.indexOf(c) != -1) {
-                frequency.put(c, frequency.getOrDefault(c, 0) + 1);
+        for (Map.Entry<Character, Integer> entry : frequencyMap.entrySet()) {
+            if (entry.getValue() > maxFrequency) {
+                maxFrequency = entry.getValue();
+                mostFrequentChar = entry.getKey();
             }
         }
-        return frequency;
-    }
 
-    private double calculateScore(Map<Character, Integer> frequency, Map<Character, Double> referenceFrequency) {
-        double score = 0;
-        int totalChars = frequency.values().stream().mapToInt(Integer::intValue).sum();
+        // Предполагаем, что наиболее часто встречающаяся буква в зашифрованном тексте соответствует 'e'
+        int key = (alphabet.indexOf(mostFrequentChar) - alphabet.indexOf('e') + alphabet.length()) % alphabet.length();
 
-        for (char c : referenceFrequency.keySet()) {
-            double expected = referenceFrequency.get(c);
-            double actual = frequency.getOrDefault(c, 0) / (double) totalChars;
-            score += Math.pow(expected - actual, 2);
-        }
-
-        return score;
+        return key;
     }
 }
